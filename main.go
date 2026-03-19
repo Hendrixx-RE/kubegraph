@@ -42,6 +42,8 @@ var (
 	white   = lipgloss.Color("#EEEEEE")
 	bg      = lipgloss.Color("#0A0A0A")
 
+	mut = lipgloss.NewStyle().Foreground(muted) // Shorthand for muted text style
+
 	logoStyle = lipgloss.NewStyle().
 			Foreground(crimson).
 			Bold(true).
@@ -117,14 +119,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return "scan_complete"
 				})
 			}
-		case "up":
+		case "up", "k":
 			if m.sidebarChoice > 0 {
 				m.sidebarChoice--
 			}
-		case "down":
+		case "down", "j":
 			if m.sidebarChoice < len(sidebarItems)-1 {
 				m.sidebarChoice++
 			}
+		case "1", "2", "3", "4", "5":
+			m.sidebarChoice = int(msg.String()[0] - '1')
 		case "enter":
 			if m.state == stateResults {
 				m.remediationMsg = true
@@ -150,6 +154,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) renderFooter() string {
+	label := sidebarLabels[m.sidebarChoice]
+	status := lipgloss.NewStyle().
+		Foreground(white).
+		Background(muted).
+		Padding(0, 1).
+		Render(fmt.Sprintf(" MODE: %s ", strings.ToUpper(label)))
+	
+	hints := mut.Render(" [↑/↓] Navigate • [1-5] Quick Jump • [Q] Quit")
+	if m.state == stateResults && m.sidebarChoice == 1 {
+		hints = mut.Render(" [↑/↓] Navigate • [1-5] Quick Jump • [Enter] Generate YAML • [Q] Quit")
+	}
+
+	return lipgloss.JoinHorizontal(lipgloss.Center, status, " ", hints)
+}
+
 func (m model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "Initializing..."
@@ -158,6 +178,7 @@ func (m model) View() string {
 	// Components
 	topBar := m.renderTopBar()
 	sidebar := m.renderSidebar()
+	footer := m.renderFooter()
 
 	var content string
 	switch m.state {
@@ -170,7 +191,9 @@ func (m model) View() string {
 	}
 
 	mainLayout := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, content)
-	return lipgloss.JoinVertical(lipgloss.Left, topBar, mainLayout)
+	fullLayout := lipgloss.JoinVertical(lipgloss.Left, topBar, mainLayout, footer)
+	
+	return fullLayout
 }
 
 func (m model) renderTopBar() string {
@@ -196,15 +219,21 @@ func (m model) renderTopBar() string {
 func (m model) renderSidebar() string {
 	var items []string
 	for i, item := range sidebarItems {
-		style := lipgloss.NewStyle().Padding(1, 0)
+		iconStyle := lipgloss.NewStyle().Padding(1, 0)
+		indicator := mut.Render(" ")
+		
 		if i == m.sidebarChoice {
-			style = style.Foreground(crimson).Bold(true)
+			iconStyle = iconStyle.Foreground(crimson).Bold(true)
+			indicator = lipgloss.NewStyle().Foreground(crimson).Bold(true).Render("┃")
 		} else {
-			style = style.Foreground(muted)
+			iconStyle = iconStyle.Foreground(muted)
 		}
-		items = append(items, style.Render(item))
+		
+		// Join indicator and icon
+		styledItem := lipgloss.JoinHorizontal(lipgloss.Center, indicator, iconStyle.Render(item))
+		items = append(items, styledItem)
 	}
-	return sidebarStyle.Height(m.height - 4).Render(lipgloss.JoinVertical(lipgloss.Center, items...))
+	return sidebarStyle.Height(m.height - 8).Render(lipgloss.JoinVertical(lipgloss.Left, items...))
 }
 
 func (m model) renderLanding() string {
@@ -226,63 +255,134 @@ func (m model) renderScanning() string {
 }
 
 func (m model) renderResults() string {
-	// Main Content Area: Graph (Left) + Intelligence (Right)
-	graphArea := m.renderGraph()
-	rightPanel := m.renderRightPanel()
+	// Main Content Area: Content (Left) + Intelligence (Right)
+	var contentArea string
+	
+	switch m.sidebarChoice {
+	case 1: // Graph Explorer
+		contentArea = m.renderGraph()
+	case 2: // Vulnerability List
+		contentArea = m.renderVulnerabilities()
+	case 3: // Kill Chain Reports
+		contentArea = m.renderKillChain()
+	case 4: // Settings
+		contentArea = m.renderSettings()
+	default: // Dashboard (Home)
+		contentArea = m.renderDashboardSummary()
+	}
 
 	mainWidth := m.width - 10 - 35
-	canvas := mainCanvasStyle.Width(mainWidth).Height(m.height - 6).Render(graphArea)
+	canvas := mainCanvasStyle.Width(mainWidth).Height(m.height - 6).Render(contentArea)
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, canvas, rightPanel)
+	return lipgloss.JoinHorizontal(lipgloss.Top, canvas, m.renderRightPanel())
 }
 
-func (m model) renderGraph() string {
-	// Nodes and connections simulation for the critical path
-	criticalPath := []string{
-		"  󱉭 Pod-A  ",
-		"      ↓      ",
-		" 󰟵 ServiceAccount-B ",
-		"      ↓      ",
-		"  󱇱 [ Role-X ]  ",
-		"      ↓      ",
-		"󱘖 production-db",
-	}
-
-	var graph strings.Builder
-	graph.WriteString("\n")
-
-	// Center the critical path
-	for i, n := range criticalPath {
-		style := criticalNodeStyle
-		if i%2 != 0 {
-			style = style.Foreground(crimson)
-		}
-		graph.WriteString(lipgloss.PlaceHorizontal(m.width-50, lipgloss.Center, style.Render(n)) + "\n")
-	}
-
-	// Peripheral nodes to fill the graph (8-10 total nodes)
-	bgNodesRow1 := []string{"󰟵 Pod-C", "󰟵 Pod-D", "󱇱 Role-Y"}
-	bgNodesRow2 := []string{"󱉭 ConfigMap-Z", "󱘖 Secrets-1", "󰟵 Namespace-Q"}
-
-	graph.WriteString("\n\n")
+func (m model) renderDashboardSummary() string {
+	title := lipgloss.NewStyle().Foreground(white).Bold(true).Render("Cluster Security Overview")
+	stats := lipgloss.JoinVertical(lipgloss.Left,
+		"\n",
+		lipgloss.NewStyle().Foreground(crimson).Render("● 1 Critical Attack Path"),
+		lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")).Render("● 12 High Vulnerabilities"),
+		lipgloss.NewStyle().Foreground(muted).Render("● 142 Benign Entities"),
+	)
 	
-	// Helper to render background nodes with muted colors
-	renderRow := func(nodes []string) string {
-		var styledNodes []string
-		for _, n := range nodes {
-			styledNodes = append(styledNodes, nodeStyle.Render("○ "+n))
+	desc := "\n\nSelect 'Graph Explorer' (2nd icon) to visualize the active kill chain."
+	return lipgloss.JoinVertical(lipgloss.Left, title, stats, desc)
+}
+
+func (m model) renderVulnerabilities() string {
+	title := lipgloss.NewStyle().Foreground(white).Bold(true).Render("Active Vulnerability Feed")
+	list := []string{
+		"CVE-2024-1234  [Critical]  Privilege Escalation in Role-X",
+		"CVE-2023-5678  [High]      Container Escape in Pod-A",
+		"CVE-2024-9012  [Medium]    Unauthorized ConfigMap Access",
+	}
+	
+	var content strings.Builder
+	content.WriteString(title + "\n\n")
+	for _, item := range list {
+		content.WriteString(mut.Render("󱔎 ") + item + "\n")
+	}
+	return content.String()
+}
+
+func (m model) renderKillChain() string {
+	title := lipgloss.NewStyle().Foreground(white).Bold(true).Render("Kill Chain Analysis Report")
+	report := "\nStep 1: Initial Access via Exposed Pod-A\nStep 2: ServiceAccount Token Extraction\nStep 3: RBAC Pivoting via Role-X\nStep 4: Exfiltration of 'production-db'"
+	return title + "\n" + mut.Render(report)
+}
+
+func (m model) renderSettings() string {
+	return lipgloss.NewStyle().Foreground(white).Bold(true).Render("System Settings") + "\n\n" + mut.Render("󰒓 Cluster Integration: Connected\n󰒓 Scan Frequency: Real-time\n󰒓 Notification Webhook: Active")
+}
+
+
+func (m model) renderGraph() string {
+	// Define color styles for semantic meaning
+	crit := criticalNodeStyle
+	mut := nodeStyle
+	arr := lipgloss.NewStyle().Foreground(crimson)
+	mutArr := lipgloss.NewStyle().Foreground(muted)
+
+	// Build the graph row by row for precise alignment
+	// We'll create a 7-row layout with multiple nodes per row to show complexity
+	
+	row1 := lipgloss.JoinHorizontal(lipgloss.Center,
+		mut.Render("󰟵 Pod-C"), "       ", mut.Render("󰟵 Pod-D"),
+	)
+
+	row2 := lipgloss.JoinHorizontal(lipgloss.Center,
+		mutArr.Render("   │           │   "),
+	)
+
+	row3 := lipgloss.JoinHorizontal(lipgloss.Center,
+		mut.Render("󱇱 Role-Y"), " ─── ", crit.Render("󱉭 Pod-A"), " ─── ", mut.Render("󱉭 ConfigMap-Z"),
+	)
+
+	row4 := lipgloss.JoinHorizontal(lipgloss.Center,
+		mutArr.Render("   │   "), "       ", arr.Render("┃"), "       ", mutArr.Render("   │   "),
+	)
+
+	row5 := lipgloss.JoinHorizontal(lipgloss.Center,
+		mut.Render("󱘖 Secrets-1"), " ─── ", crit.Render("󰟵 SA-B"), " ─── ", mut.Render("󰟵 Namespace-Q"),
+	)
+
+	row6 := lipgloss.JoinHorizontal(lipgloss.Center,
+		"               ", arr.Render("┃"), "               ",
+	)
+
+	row7 := lipgloss.JoinHorizontal(lipgloss.Center,
+		"             ", crit.Render("󱇱 [ Role-X ]"), "            ",
+	)
+
+	row8 := lipgloss.JoinHorizontal(lipgloss.Center,
+		"               ", arr.Render("┃"), "               ",
+	)
+
+	row9 := lipgloss.JoinHorizontal(lipgloss.Center,
+		"           ", crit.Render("󱘖 production-db"), "          ",
+	)
+
+	// Combine rows
+	var g strings.Builder
+	rows := []string{row1, row2, row3, row4, row5, row6, row7, row8, row9}
+	
+	maxWidth := 0
+	for _, r := range rows {
+		w := lipgloss.Width(r)
+		if w > maxWidth {
+			maxWidth = w
 		}
-		return lipgloss.PlaceHorizontal(m.width-50, lipgloss.Center, strings.Join(styledNodes, "     "))
 	}
 
-	graph.WriteString(renderRow(bgNodesRow1) + "\n\n")
-	graph.WriteString(renderRow(bgNodesRow2) + "\n")
+	g.WriteString("\n")
+	for _, r := range rows {
+		// Center each row within the maxWidth to ensure vertical alignment
+		centeredRow := lipgloss.PlaceHorizontal(m.width-45, lipgloss.Center, r)
+		g.WriteString(centeredRow + "\n")
+	}
 
-	// Decorative edges for background nodes
-	graph.WriteString(lipgloss.PlaceHorizontal(m.width-50, lipgloss.Center, nodeStyle.Render("      ↘        ↙        ↘")) + "\n")
-	graph.WriteString(lipgloss.PlaceHorizontal(m.width-50, lipgloss.Center, nodeStyle.Render("       ( Muted Nodes Area )")))
-
-	return graph.String()
+	return g.String()
 }
 
 func (m model) renderRightPanel() string {
