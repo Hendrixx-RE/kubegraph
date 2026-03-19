@@ -2,6 +2,10 @@
 
 KubeGraph is an enterprise-grade Command Line Interface (CLI) prototype designed for cybersecurity analysts to visualize and remediate complex attack paths within Kubernetes clusters. By transforming isolated security alerts into a unified mathematical topology, KubeGraph provides the context necessary to identify and sever critical kill chains.
 
+
+https://github.com/user-attachments/assets/0c5f79c8-1fae-466e-8ff0-fdfcb7454254
+
+
 ## Overview
 
 Traditional security tools often overwhelm analysts with thousands of disconnected vulnerabilities. KubeGraph solves this by utilizing graph theory to map relationships between Pods, ServiceAccounts, Roles, and sensitive infrastructure. It highlights multi-hop paths that an attacker might take to escalate privileges or access "Crown Jewel" assets like production databases.
